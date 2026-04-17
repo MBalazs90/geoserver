@@ -18,14 +18,12 @@ service:
 
 route:
   enabled: true
-  host: ""   # auto-generated if empty
+  host: ""
   tls:
     termination: edge
 
 persistence:
-  enabled: true
-  size: 5Gi
-  storageClass: lvms-vg1
+  enabled: false
 
 geoserver:
   dataDir: /opt/geoserver/data_dir
