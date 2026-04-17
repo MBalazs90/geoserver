@@ -1,0 +1,72 @@
+---
+# TriggerBinding: extracts params from GitHub push webhook JSON
+apiVersion: triggers.tekton.dev/v1beta1
+kind: TriggerBinding
+metadata:
+  name: github-push-binding
+spec:
+  params:
+    - name: git-url
+      value: $(body.repository.clone_url)
+    - name: git-revision
+      value: $(body.after)
+    - name: git-branch
+      value: $(body.ref)
+---
+# TriggerTemplate: creates a PipelineRun when triggered
+apiVersion: triggers.tekton.dev/v1beta1
+kind: TriggerTemplate
+metadata:
+  name: geoserver-trigger-template
+spec:
+  params:
+    - name: git-url
+    - name: git-revision
+    - name: git-branch
+  resourcetemplates:
+    - apiVersion: tekton.dev/v1
+      kind: PipelineRun
+      metadata:
+        generateName: geoserver-auto-
+      spec:
+        pipelineRef:
+          name: geoserver-pipeline
+        params:
+          - name: git-url
+            value: $(tt.params.git-url)
+          - name: git-revision
+            value: $(tt.params.git-revision)
+          - name: image-tag
+            value: $(tt.params.git-revision)
+        workspaces:
+          - name: shared-workspace
+            volumeClaimTemplate:
+              spec:
+                accessModes: [ReadWriteOnce]
+                storageClassName: lvms-vg1
+                resources:
+                  requests:
+                    storage: 10Gi
+        taskRunTemplate:
+          serviceAccountName: pipeline
+---
+# EventListener: receives GitHub webhooks, filters for main branch pushes
+apiVersion: triggers.tekton.dev/v1beta1
+kind: EventListener
+metadata:
+  name: github-listener
+spec:
+  serviceAccountName: pipeline
+  triggers:
+    - name: main-push
+      interceptors:
+        # Only trigger on pushes to main (refs/heads/main)
+        - ref:
+            name: "cel"
+          params:
+            - name: "filter"
+              value: "body.ref == 'refs/heads/main'"
+      bindings:
+        - ref: github-push-binding
+      template:
+        ref: geoserver-trigger-template
