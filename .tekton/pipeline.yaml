@@ -1,0 +1,209 @@
+---
+# Task: git-clone
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: git-clone
+spec:
+  params:
+    - name: url
+      type: string
+    - name: revision
+      type: string
+      default: main
+  workspaces:
+    - name: output
+  results:
+    - name: commit
+      description: The commit SHA that was cloned
+  steps:
+    - name: clone
+      image: registry.access.redhat.com/ubi9/ubi-minimal:latest
+      script: |
+        #!/bin/bash
+        microdnf install -y git-core > /dev/null 2>&1
+        cd $(workspaces.output.path)
+        git clone --depth 1 --branch $(params.revision) $(params.url) .
+        COMMIT=$(git rev-parse --short HEAD)
+        echo "Cloned $(params.url) @ $COMMIT"
+        echo -n "$COMMIT" > $(results.commit.path)
+---
+# Task: Maven build — produces geoserver.war
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: maven-build
+spec:
+  params:
+    - name: goals
+      type: string
+      default: "package -DskipTests -T 1C -pl web/app -am"
+  workspaces:
+    - name: source
+  steps:
+    - name: build
+      image: docker.io/maven:3.9-eclipse-temurin-17
+      workingDir: $(workspaces.source.path)/src
+      resources:
+        requests:
+          cpu: "1"
+          memory: 4Gi
+        limits:
+          cpu: "4"
+          memory: 6Gi
+      script: |
+        #!/bin/bash
+        set -e
+        echo "=== Maven Build ==="
+        mvn -B \
+          -Dmaven.repo.local=$(workspaces.source.path)/.m2 \
+          $(params.goals)
+
+        WAR=$(find . -name "geoserver.war" -path "*/web/app/target/*" | head -1)
+        if [ -z "$WAR" ]; then
+          echo "ERROR: geoserver.war not found!"
+          exit 1
+        fi
+        echo "=== WAR: $WAR ==="
+        ls -lh "$WAR"
+        cp "$WAR" $(workspaces.source.path)/geoserver.war
+---
+# Task: Build + push container image
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: build-push-image
+spec:
+  params:
+    - name: image
+      type: string
+  workspaces:
+    - name: source
+  steps:
+    - name: build-and-push
+      image: registry.access.redhat.com/ubi9/buildah:latest
+      workingDir: $(workspaces.source.path)
+      securityContext:
+        capabilities:
+          add: ["SETFCAP"]
+      script: |
+        #!/bin/bash
+        set -e
+        echo "=== Building $(params.image) ==="
+        ls -lh geoserver.war
+
+        buildah bud \
+          --storage-driver=vfs \
+          --tls-verify=false \
+          --layers \
+          -f Dockerfile \
+          -t $(params.image) .
+
+        buildah push \
+          --storage-driver=vfs \
+          --tls-verify=false \
+          $(params.image)
+
+        echo "=== Image pushed ==="
+---
+# Task: Deploy with Helm
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: helm-deploy
+spec:
+  params:
+    - name: release-name
+      type: string
+      default: geoserver
+    - name: image-tag
+      type: string
+      default: latest
+    - name: namespace
+      type: string
+      default: geoserver
+  workspaces:
+    - name: source
+  steps:
+    - name: deploy
+      image: docker.io/alpine/helm:3.16.4
+      workingDir: $(workspaces.source.path)
+      script: |
+        #!/bin/sh
+        set -e
+        echo "=== Helm Deploy ==="
+        helm upgrade --install $(params.release-name) ./deploy/helm/ \
+          --namespace $(params.namespace) \
+          --set image.tag=$(params.image-tag) \
+          --wait --timeout 5m
+        echo "=== Done ==="
+        helm list -n $(params.namespace)
+---
+# The Pipeline: clone → build → image → deploy
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: geoserver-pipeline
+spec:
+  params:
+    - name: git-url
+      type: string
+      default: "https://github.com/MBalazs90/geoserver.git"
+    - name: git-revision
+      type: string
+      default: main
+    - name: image
+      type: string
+      default: "image-registry.openshift-image-registry.svc:5000/geoserver/geoserver"
+    - name: image-tag
+      type: string
+      default: latest
+  workspaces:
+    - name: shared-workspace
+
+  tasks:
+    - name: clone
+      taskRef:
+        name: git-clone
+      params:
+        - name: url
+          value: "$(params.git-url)"
+        - name: revision
+          value: "$(params.git-revision)"
+      workspaces:
+        - name: output
+          workspace: shared-workspace
+
+    - name: build
+      taskRef:
+        name: maven-build
+      runAfter: [clone]
+      workspaces:
+        - name: source
+          workspace: shared-workspace
+
+    - name: build-image
+      taskRef:
+        name: build-push-image
+      runAfter: [build]
+      params:
+        - name: image
+          value: "$(params.image):$(params.image-tag)"
+      workspaces:
+        - name: source
+          workspace: shared-workspace
+
+    - name: deploy
+      taskRef:
+        name: helm-deploy
+      runAfter: [build-image]
+      params:
+        - name: release-name
+          value: geoserver
+        - name: image-tag
+          value: "$(params.image-tag)"
+        - name: namespace
+          value: geoserver
+      workspaces:
+        - name: source
+          workspace: shared-workspace

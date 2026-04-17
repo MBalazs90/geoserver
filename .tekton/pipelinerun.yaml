@@ -1,0 +1,28 @@
+# Example PipelineRun — apply to trigger a build:
+#   oc create -f .tekton/pipelinerun.yaml
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  generateName: geoserver-run-
+  namespace: geoserver
+spec:
+  pipelineRef:
+    name: geoserver-pipeline
+  params:
+    - name: git-url
+      value: "https://github.com/MBalazs90/geoserver.git"
+    - name: git-revision
+      value: main
+    - name: image-tag
+      value: latest
+  workspaces:
+    - name: shared-workspace
+      volumeClaimTemplate:
+        spec:
+          accessModes: [ReadWriteOnce]
+          storageClassName: lvms-vg1
+          resources:
+            requests:
+              storage: 10Gi
+  taskRunTemplate:
+    serviceAccountName: pipeline
