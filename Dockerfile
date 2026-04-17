@@ -2,7 +2,7 @@
 FROM docker.io/maven:3.9-eclipse-temurin-17 AS builder
 WORKDIR /build
 COPY src/ src/
-RUN cd src && mvn -B package -DskipTests -pl web -am \
+RUN cd src && mvn -B package -DskipTests \
     -Dmaven.repo.local=/build/.m2
 
 # Stage 2: Deploy into Red Hat UBI + Tomcat
@@ -18,7 +18,7 @@ RUN curl -sL https://archive.apache.org/dist/tomcat/tomcat-10/v10.1.34/bin/apach
     rm -rf $CATALINA_HOME/webapps/*
 
 # Deploy GeoServer WAR from builder stage
-COPY --from=builder /build/src/web/app/target/geoserver.war /tmp/geoserver.war
+COPY --from=builder /build/src/web/app/target/geoserver*.war /tmp/geoserver.war
 RUN mkdir -p $CATALINA_HOME/webapps/geoserver && \
     cd $CATALINA_HOME/webapps/geoserver && \
     unzip -q /tmp/geoserver.war && \
