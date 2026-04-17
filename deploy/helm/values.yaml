@@ -27,4 +27,4 @@ persistence:
 
 geoserver:
   dataDir: /opt/geoserver/data_dir
-  javaOpts: "-Xms512m -Xmx2g"
+  javaOpts: ""

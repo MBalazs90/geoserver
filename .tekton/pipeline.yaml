@@ -1,5 +1,5 @@
 ---
-# Task: git-clone (handles both branch names and commit SHAs)
+# Task: git-clone
 apiVersion: tekton.dev/v1
 kind: Task
 metadata:
@@ -32,57 +32,7 @@ spec:
         echo "Cloned @ $COMMIT"
         echo -n "$COMMIT" > $(results.commit.path)
 ---
-# Task: Maven build
-apiVersion: tekton.dev/v1
-kind: Task
-metadata:
-  name: maven-build
-spec:
-  params:
-    - name: goals
-      type: string
-      default: "package -DskipTests"
-  workspaces:
-    - name: source
-  steps:
-    - name: build
-      image: docker.io/maven:3.9-eclipse-temurin-17
-      workingDir: $(workspaces.source.path)/src
-      resources:
-        requests:
-          cpu: "1"
-          memory: 4Gi
-        limits:
-          cpu: "4"
-          memory: 6Gi
-      script: |
-        #!/bin/bash
-        set -e
-        echo "=== Maven Build ==="
-        echo "Working dir: $(pwd)"
-        echo "Modules: $(grep '<module>' pom.xml | head -3 | tr -d ' ')"
-
-        mvn -B \
-          -Dmaven.repo.local=$(workspaces.source.path)/.m2 \
-          $(params.goals)
-
-        echo "=== Finding build output ==="
-        OUTPUT=$(find . -name "gs-web-app*.jar" -not -name "*sources*" -not -name "*tests*" -path "*/target/*" | head -1)
-        if [ -z "$OUTPUT" ]; then
-          OUTPUT=$(find . -name "geoserver*.war" -path "*/target/*" | head -1)
-        fi
-        if [ -z "$OUTPUT" ]; then
-          echo "WARN: No WAR/JAR found, listing all targets:"
-          find . -path "*/target/*.jar" -o -path "*/target/*.war" | head -10
-          echo "Continuing anyway — Dockerfile uses base image"
-        fi
-        if [ -n "$OUTPUT" ]; then
-          echo "=== Output: $OUTPUT ==="
-          ls -lh "$OUTPUT"
-          cp "$OUTPUT" $(workspaces.source.path)/geoserver.war
-        fi
----
-# Task: Build + push container image
+# Task: Build + push container image (multi-stage Dockerfile does Maven build inside)
 apiVersion: tekton.dev/v1
 kind: Task
 metadata:
@@ -100,11 +50,18 @@ spec:
       securityContext:
         capabilities:
           add: ["SETFCAP"]
+      resources:
+        requests:
+          cpu: "2"
+          memory: 6Gi
+        limits:
+          cpu: "4"
+          memory: 8Gi
       script: |
         #!/bin/bash
         set -e
         echo "=== Building $(params.image) ==="
-        ls -lh geoserver.war 2>/dev/null || echo "No WAR found — Dockerfile will use base image only"
+        echo "Multi-stage: Maven build + UBI deploy"
 
         buildah bud \
           --storage-driver=vfs \
@@ -145,15 +102,13 @@ spec:
       script: |
         #!/bin/sh
         set -e
-        echo "=== Helm Deploy ==="
         helm upgrade --install $(params.release-name) ./deploy/helm/ \
           --namespace $(params.namespace) \
           --set image.tag=$(params.image-tag) \
-          --wait --timeout 5m
-        echo "=== Done ==="
+          --wait --timeout 10m
         helm list -n $(params.namespace)
 ---
-# The Pipeline
+# Pipeline: clone → build+image (multi-stage) → deploy
 apiVersion: tekton.dev/v1
 kind: Pipeline
 metadata:
@@ -188,18 +143,10 @@ spec:
         - name: output
           workspace: shared-workspace
 
-    - name: build
-      taskRef:
-        name: maven-build
-      runAfter: [clone]
-      workspaces:
-        - name: source
-          workspace: shared-workspace
-
     - name: build-image
       taskRef:
         name: build-push-image
-      runAfter: [build]
+      runAfter: [clone]
       params:
         - name: image
           value: "$(params.image):$(params.image-tag)"
