@@ -2,6 +2,7 @@
 FROM docker.io/maven:3.9-eclipse-temurin-17 AS builder
 WORKDIR /build
 COPY src/ src/
+COPY data/ data/
 RUN cd src && mvn -B package -DskipTests \
     -Dmaven.repo.local=/build/.m2
 
