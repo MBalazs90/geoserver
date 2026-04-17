@@ -82,3 +82,12 @@ Please read [the contribution guidelines](https://github.com/geoserver/geoserver
 
 Visit the [website](https://geoserver.org/) and read the [docs](https://docs.geoserver.org/). 
 
+
+---
+## OCP Deployment
+
+This project includes CI/CD automation for OpenShift Container Platform:
+
+- `Dockerfile` — Tomcat-based container image
+- `deploy/helm/` — Helm chart for OCP deployment
+- `.tekton/` — Tekton pipeline + triggers (auto-deploy on merge to main)
