@@ -37,7 +37,7 @@ spec:
   params:
     - name: goals
       type: string
-      default: "package -DskipTests -T 1C -pl :gs-web-app -am"
+      default: "package -DskipTests -pl web -am"
   workspaces:
     - name: source
   steps:
@@ -59,14 +59,20 @@ spec:
           -Dmaven.repo.local=$(workspaces.source.path)/.m2 \
           $(params.goals)
 
-        WAR=$(find . -name "geoserver.war" -path "*/web/app/target/*" | head -1)
-        if [ -z "$WAR" ]; then
-          echo "ERROR: geoserver.war not found!"
+        echo "=== Finding build output ==="
+        # GeoServer 3.0 may produce JAR or WAR
+        OUTPUT=$(find . -name "gs-web-app*.jar" -not -name "*sources*" -not -name "*tests*" -path "*/target/*" | head -1)
+        if [ -z "$OUTPUT" ]; then
+          OUTPUT=$(find . -name "geoserver*.war" -path "*/target/*" | head -1)
+        fi
+        if [ -z "$OUTPUT" ]; then
+          echo "ERROR: No build output found! Listing targets:"
+          find . -path "*/target/*.jar" -o -path "*/target/*.war" | head -10
           exit 1
         fi
-        echo "=== WAR: $WAR ==="
-        ls -lh "$WAR"
-        cp "$WAR" $(workspaces.source.path)/geoserver.war
+        echo "=== Output: $OUTPUT ==="
+        ls -lh "$OUTPUT"
+        cp "$OUTPUT" $(workspaces.source.path)/geoserver.war
 ---
 # Task: Build + push container image
 apiVersion: tekton.dev/v1
