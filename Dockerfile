@@ -9,7 +9,7 @@ RUN cd src && mvn -B package -DskipTests -pl web -am \
 FROM registry.access.redhat.com/ubi9/openjdk-17-runtime:latest
 
 USER root
-RUN microdnf install -y unzip && microdnf clean all
+RUN microdnf install -y unzip gzip tar && microdnf clean all
 
 # Install Tomcat
 ENV CATALINA_HOME=/opt/tomcat
@@ -17,7 +17,7 @@ RUN curl -sL https://archive.apache.org/dist/tomcat/tomcat-10/v10.1.34/bin/apach
     | tar xz -C /opt && mv /opt/apache-tomcat-* $CATALINA_HOME && \
     rm -rf $CATALINA_HOME/webapps/*
 
-# Deploy GeoServer WAR
+# Deploy GeoServer WAR from builder stage
 COPY --from=builder /build/src/web/app/target/geoserver.war /tmp/geoserver.war
 RUN mkdir -p $CATALINA_HOME/webapps/geoserver && \
     cd $CATALINA_HOME/webapps/geoserver && \
@@ -27,7 +27,7 @@ RUN mkdir -p $CATALINA_HOME/webapps/geoserver && \
 # GeoServer data directory
 RUN mkdir -p /opt/geoserver/data_dir
 
-# OCP: make writable for random UID
+# OCP: writable for random UID
 RUN chmod -R g=u $CATALINA_HOME /opt/geoserver
 
 ENV GEOSERVER_DATA_DIR=/opt/geoserver/data_dir
