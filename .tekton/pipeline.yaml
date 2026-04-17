@@ -37,7 +37,7 @@ spec:
   params:
     - name: goals
       type: string
-      default: "package -DskipTests -T 1C -pl web/app -am"
+      default: "package -DskipTests -T 1C -pl :gs-web-app -am"
   workspaces:
     - name: source
   steps:
