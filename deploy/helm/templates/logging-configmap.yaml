@@ -1,0 +1,40 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-logging
+  labels:
+    app: {{ .Release.Name }}
+data:
+  log4j2.xml: |
+    <?xml version="1.0" encoding="UTF-8"?>
+    <Configuration status="WARN" monitorInterval="30">
+      <Appenders>
+        <Console name="stdout" target="SYSTEM_OUT">
+          <JsonLayout compact="true" eventEol="true" stacktraceAsString="true"
+                      properties="true" includeTimeMillis="true">
+            <KeyValuePair key="application" value="geoserver"/>
+            <KeyValuePair key="environment" value="ocp-lab"/>
+          </JsonLayout>
+        </Console>
+      </Appenders>
+      <Loggers>
+        <Logger name="org.geoserver" level="INFO" additivity="false">
+          <AppenderRef ref="stdout"/>
+        </Logger>
+        <Logger name="org.geoserver.security" level="INFO" additivity="false">
+          <AppenderRef ref="stdout"/>
+        </Logger>
+        <Logger name="org.geotools" level="WARN" additivity="false">
+          <AppenderRef ref="stdout"/>
+        </Logger>
+        <Logger name="org.vfny" level="WARN" additivity="false">
+          <AppenderRef ref="stdout"/>
+        </Logger>
+        <Logger name="org.springframework" level="WARN" additivity="false">
+          <AppenderRef ref="stdout"/>
+        </Logger>
+        <Root level="WARN">
+          <AppenderRef ref="stdout"/>
+        </Root>
+      </Loggers>
+    </Configuration>

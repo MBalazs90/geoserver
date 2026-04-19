@@ -24,8 +24,14 @@ spec:
           env:
             - name: GEOSERVER_DATA_DIR
               value: {{ .Values.geoserver.dataDir }}
+            - name: JAVA_OPTS
+              value: "-Dlog4j.configurationFile=/opt/logging/log4j2.xml {{ .Values.geoserver.javaOpts }}"
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: logging-config
+              mountPath: /opt/logging
+              readOnly: true
           startupProbe:
             tcpSocket:
               port: http
@@ -39,3 +45,7 @@ spec:
             tcpSocket:
               port: http
             periodSeconds: 30
+      volumes:
+        - name: logging-config
+          configMap:
+            name: {{ .Release.Name }}-logging
